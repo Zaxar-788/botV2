@@ -4,7 +4,8 @@ Telegram бот для отправки уведомлений о торговы
 """
 
 import logging
-from typing import Optional, List
+import requests
+from typing import Optional, List, Union
 from datetime import datetime
 from src.signals.detector import VolumeSignal
 from src.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TRADING_PAIRS, TIMEFRAMES
@@ -18,8 +19,7 @@ class TelegramNotifier:
     Класс для отправки уведомлений в Telegram
     
     Поддерживает отправку сигналов для множественных пар и таймфреймов.
-    В текущей версии только выводит сигналы в консоль.
-    TODO: Добавить реальную интеграцию с Telegram Bot API
+    Включает профессиональное оформление сообщений с HTML-разметкой и inline-кнопками.
     """
     
     def __init__(self, bot_token: str = TELEGRAM_BOT_TOKEN, chat_id: str = TELEGRAM_CHAT_ID):
@@ -39,9 +39,125 @@ class TelegramNotifier:
         else:
             logger.info("Telegram уведомления настроены")
     
+    def send_professional_signal(self, 
+                                token: str, 
+                                chat_id: Union[str, int], 
+                                coin: str,
+                                timeframe: str, 
+                                signal_type: str,
+                                price: float,
+                                volume: float,
+                                oi: Optional[float] = None,
+                                change_percent: Optional[float] = None,
+                                coin_url: Optional[str] = None,
+                                comment: Optional[str] = None) -> bool:
+        """
+        Отправка профессионально оформленного торгового сигнала в Telegram
+        
+        Args:
+            token (str): Токен Telegram бота
+            chat_id (Union[str, int]): ID чата для отправки
+            coin (str): Название монеты (например: BTC_USDT)
+            timeframe (str): Таймфрейм (например: 1m)
+            signal_type (str): Тип сигнала (pump/dump/long/short/alert)
+            price (float): Цена
+            volume (float): Объём
+            oi (Optional[float]): Open Interest (опционально)
+            change_percent (Optional[float]): Изменение за период в процентах
+            coin_url (Optional[str]): Ссылка на монету на MEXC
+            comment (Optional[str]): Дополнительный комментарий
+            
+        Returns:
+            bool: True если сообщение отправлено успешно, False иначе
+        """
+        try:
+            # Определяем emoji и стиль по типу сигнала
+            signal_config = {
+                'pump': {'emoji': '🚀', 'color': '🟢', 'name': 'ПАМП'},
+                'dump': {'emoji': '💥', 'color': '🔴', 'name': 'ДАМП'},
+                'long': {'emoji': '🟢', 'color': '🟢', 'name': 'ЛОНГ'},
+                'short': {'emoji': '🔴', 'color': '🔴', 'name': 'ШОРТ'},
+                'alert': {'emoji': '⚡️', 'color': '🟡', 'name': 'АЛЕРТ'}
+            }
+            
+            config = signal_config.get(signal_type.lower(), signal_config['alert'])
+            
+            # Формируем ссылку на монету, если не передана
+            if not coin_url:
+                coin_url = f"https://futures.mexc.com/exchange/{coin}"
+            
+            # Формируем основное сообщение
+            message = f"{config['emoji']} <b>{config['name']} СИГНАЛ</b>\n\n"
+            
+            # Добавляем информацию о монете с кликабельной ссылкой
+            message += f"💰 Монета: <a href='{coin_url}'>{coin}</a> <code>{coin}</code>\n"
+            
+            # Добавляем основные параметры
+            message += f"⏰ Таймфрейм: <b>{timeframe}</b>\n"
+            message += f"💵 Цена: <b>${price:,.4f}</b>\n"
+            message += f"📊 Объём: <b>{volume:,.0f}</b>\n"
+            
+            # Добавляем OI если передан
+            if oi is not None:
+                message += f"🔄 OI: <b>{oi:,.0f}</b>\n"
+            
+            # Добавляем изменение за период если передано
+            if change_percent is not None:
+                change_emoji = "📈" if change_percent > 0 else "📉"
+                sign = "+" if change_percent > 0 else ""
+                message += f"{change_emoji} Изменение: <b>{sign}{change_percent:.2f}%</b>\n"
+            
+            # Добавляем временную метку
+            current_time = datetime.now().strftime("%H:%M:%S")
+            message += f"🕐 Время: <b>{current_time}</b>\n"
+            
+            # Добавляем комментарий если есть
+            if comment:
+                message += f"\n💬 <i>{comment}</i>\n"
+            
+            # Формируем inline клавиатуру с кнопкой
+            reply_markup = {
+                "inline_keyboard": [[
+                    {
+                        "text": f"📈 Открыть {coin} на MEXC",
+                        "url": coin_url
+                    }
+                ]]
+            }
+            
+            # Отправляем сообщение через Telegram Bot API
+            url = f"https://api.telegram.org/bot{token}/sendMessage"
+            
+            payload = {
+                "chat_id": chat_id,
+                "text": message,
+                "parse_mode": "HTML",
+                "disable_web_page_preview": True,
+                "reply_markup": reply_markup
+            }
+            
+            response = requests.post(url, json=payload, timeout=10)
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            if result.get("ok"):
+                logger.info(f"Профессиональный сигнал отправлен: {coin} ({timeframe}) - {signal_type.upper()}")
+                return True
+            else:
+                logger.error(f"Ошибка Telegram API: {result.get('description', 'Неизвестная ошибка')}")
+                return False
+                
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Ошибка при отправке HTTP запроса в Telegram: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при отправке профессионального сигнала: {e}")
+            return False
+    
     def send_volume_signal(self, signal: VolumeSignal) -> bool:
         """
-        Отправка сигнала о спайке объёма
+        Отправка сигнала о спайке объёма с использованием профессионального оформления
         
         Args:
             signal (VolumeSignal): Объект сигнала для отправки
@@ -49,10 +165,9 @@ class TelegramNotifier:
         Returns:
             bool: True если сообщение отправлено успешно, False иначе
         """
-        try:
-            # Форматируем временную метку
+        if not self.is_enabled:
+            # Fallback: выводим в консоль если Telegram не настроен
             timestamp_str = datetime.fromtimestamp(signal.timestamp / 1000).strftime("%H:%M:%S")
-            # Формируем текст сообщения
             message = f"""
 🚨 ОБНАРУЖЕН СПАЙК ОБЪЁМА!
 
@@ -66,9 +181,6 @@ class TelegramNotifier:
 
 {signal.message}
 """
-            
-            # TODO: Реализовать отправку через Telegram Bot API
-            # Сейчас просто выводим в консоль
             print("=" * 60)
             print("📨 TELEGRAM УВЕДОМЛЕНИЕ:")
             print(message)
@@ -76,6 +188,31 @@ class TelegramNotifier:
             
             logger.info(f"Сигнал отправлен для {signal.pair} ({signal.timeframe}): {signal.spike_ratio:.1f}x спайк объёма")
             return True
+        
+        try:
+            # Определяем тип сигнала на основе спайка объёма
+            if signal.spike_ratio >= 5.0:
+                signal_type = "pump" if signal.price > 0 else "alert"
+            elif signal.spike_ratio >= 3.0:
+                signal_type = "alert"
+            else:
+                signal_type = "alert"
+            
+            # Формируем комментарий
+            comment = f"Спайк объёма {signal.spike_ratio:.1f}x от среднего значения. {signal.message}"
+            
+            # Отправляем через новую функцию профессионального оформления
+            return self.send_professional_signal(
+                token=self.bot_token,
+                chat_id=self.chat_id,
+                coin=signal.pair,
+                timeframe=signal.timeframe,
+                signal_type=signal_type,
+                price=signal.price,
+                volume=signal.current_volume,
+                change_percent=None,  # Можно добавить расчет изменения цены
+                comment=comment
+            )
             
         except Exception as e:
             logger.error(f"Ошибка при отправке Telegram сигнала: {e}")
@@ -174,34 +311,3 @@ class TelegramNotifier:
 на всех отслеживаемых парах и таймфреймах.
 """
         return self.send_custom_message(message)
-
-
-# TODO: Функции для будущей интеграции с Telegram Bot API
-def _send_telegram_request(bot_token: str, method: str, data: dict) -> Optional[dict]:
-    """
-    Отправка запроса к Telegram Bot API (заготовка)
-    
-    Args:
-        bot_token (str): Токен бота
-        method (str): Метод API (например, 'sendMessage')
-        data (dict): Данные для отправки
-        
-    Returns:
-        dict: Ответ от API или None при ошибке
-    """
-    # TODO: Реализовать HTTP запрос к https://api.telegram.org/bot{token}/{method}
-    pass
-
-
-def _format_message_for_telegram(text: str) -> str:
-    """
-    Форматирование сообщения для Telegram (экранирование специальных символов)
-    
-    Args:
-        text (str): Исходный текст
-        
-    Returns:
-        str: Отформатированный текст
-    """
-    # TODO: Добавить экранирование для MarkdownV2 или HTML
-    return text

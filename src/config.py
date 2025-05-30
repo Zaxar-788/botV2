@@ -3,6 +3,12 @@
 Поддержка мультипарности и мульти-таймфрейм анализа
 """
 
+import os
+from dotenv import load_dotenv
+
+# Загружаем переменные окружения из .env файла
+load_dotenv()
+
 # Настройки для торговых пар - поддержка нескольких пар
 TRADING_PAIRS = [
     "BTC_USDT",
@@ -55,10 +61,10 @@ TIMEFRAME_CONFIGS = {
     }
 }
 
-# Настройки для Telegram (TODO: добавить токен в .env)
-TELEGRAM_BOT_TOKEN = ""  # Будет загружаться из .env
-TELEGRAM_CHAT_ID = ""    # Будет загружаться из .env
+# Настройки для Telegram (из переменных окружения)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Настройки логирования
-LOG_LEVEL = "INFO"
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
