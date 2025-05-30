@@ -1,12 +1,13 @@
 """
 Telegram бот для отправки уведомлений о торговых сигналах
+Поддержка мультипарности и мульти-таймфрейм анализа
 """
 
 import logging
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 from src.signals.detector import VolumeSignal
-from src.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID
+from src.config import TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, TRADING_PAIRS, TIMEFRAMES
 
 # Настройка логгера
 logger = logging.getLogger(__name__)
@@ -16,7 +17,8 @@ class TelegramNotifier:
     """
     Класс для отправки уведомлений в Telegram
     
-    В текущей версии (MVP) только выводит сигналы в консоль.
+    Поддерживает отправку сигналов для множественных пар и таймфреймов.
+    В текущей версии только выводит сигналы в консоль.
     TODO: Добавить реальную интеграцию с Telegram Bot API
     """
     
@@ -50,13 +52,13 @@ class TelegramNotifier:
         try:
             # Форматируем временную метку
             timestamp_str = datetime.fromtimestamp(signal.timestamp / 1000).strftime("%H:%M:%S")
-            
             # Формируем текст сообщения
             message = f"""
 🚨 ОБНАРУЖЕН СПАЙК ОБЪЁМА!
 
 📊 Пара: {signal.pair}
-⏰ Время: {timestamp_str}
+⏰ Таймфрейм: {signal.timeframe}
+🕐 Время: {timestamp_str}
 💰 Цена: ${signal.price:.2f}
 📈 Объём: {signal.current_volume:.0f}
 📊 Средний объём: {signal.average_volume:.0f}
@@ -72,11 +74,54 @@ class TelegramNotifier:
             print(message)
             print("=" * 60)
             
-            logger.info(f"Сигнал отправлен для {signal.pair}: {signal.spike_ratio:.1f}x спайк объёма")
+            logger.info(f"Сигнал отправлен для {signal.pair} ({signal.timeframe}): {signal.spike_ratio:.1f}x спайк объёма")
             return True
             
         except Exception as e:
             logger.error(f"Ошибка при отправке Telegram сигнала: {e}")
+            return False
+    
+    def send_multiple_signals(self, signals: List[VolumeSignal]) -> bool:
+        """
+        Отправка множественных сигналов одним сообщением
+        
+        Args:
+            signals (List[VolumeSignal]): Список сигналов для отправки
+            
+        Returns:
+            bool: True если сообщение отправлено успешно, False иначе
+        """
+        if not signals:
+            return True
+        
+        try:
+            # Группируем сигналы для компактного отображения
+            message = f"""
+🚨 ОБНАРУЖЕНО {len(signals)} СПАЙКОВ ОБЪЁМА!
+
+"""
+            
+            for i, signal in enumerate(signals, 1):
+                timestamp_str = datetime.fromtimestamp(signal.timestamp / 1000).strftime("%H:%M:%S")
+                message += f"""
+{i}. 📊 {signal.pair} ({signal.timeframe})
+   🕐 {timestamp_str} | 💰 ${signal.price:.2f}
+   🔥 Превышение: {signal.spike_ratio:.1f}x
+   📈 Объём: {signal.current_volume:.0f} (средний: {signal.average_volume:.0f})
+
+"""
+            
+            # TODO: Реализовать отправку через Telegram Bot API
+            print("=" * 60)
+            print("📨 TELEGRAM МАССОВОЕ УВЕДОМЛЕНИЕ:")
+            print(message)
+            print("=" * 60)
+            
+            logger.info(f"Отправлено массовое уведомление о {len(signals)} сигналах")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Ошибка при отправке массового уведомления: {e}")
             return False
     
     def send_custom_message(self, message: str) -> bool:
@@ -105,21 +150,28 @@ class TelegramNotifier:
     
     def send_startup_notification(self) -> bool:
         """
-        Отправка уведомления о запуске бота
+        Отправка уведомления о запуске мультипарного бота
         
         Returns:
             bool: True если уведомление отправлено успешно, False иначе
         """
         startup_time = datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+        
+        # Формируем список отслеживаемых пар и таймфреймов
+        pairs_str = ", ".join(TRADING_PAIRS)
+        timeframes_str = ", ".join(TIMEFRAMES)
+        
         message = f"""
-🤖 БОТ АНАЛИЗА MEXC FUTURES ЗАПУЩЕН
+🤖 МУЛЬТИПАРНЫЙ БОТ АНАЛИЗА MEXC FUTURES ЗАПУЩЕН
 
 ⏰ Время запуска: {startup_time}
-📊 Отслеживаемая пара: BTC_USDT
+📊 Отслеживаемые пары: {pairs_str}
+⏰ Таймфреймы: {timeframes_str}
 🔍 Анализ: спайки объёма
 📡 Статус: активен
 
-Бот будет уведомлять о значительных аномалиях объёма торгов.
+Бот будет уведомлять о значительных аномалиях объёма торгов 
+на всех отслеживаемых парах и таймфреймах.
 """
         return self.send_custom_message(message)
 
