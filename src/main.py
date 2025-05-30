@@ -16,9 +16,10 @@ from typing import Optional, List, Dict, Tuple
 # Импорты наших модулей
 from src.utils.logger import setup_main_logger
 from src.data.rest_client import MexcRestClient
+from src.data.database import SignalsManager
 from src.signals.detector import VolumeSpikeDetector, VolumeSignal
 from src.telegram.bot import TelegramNotifier
-from src.config import TRADING_PAIRS, TIMEFRAMES, TIMEFRAME_CONFIGS
+from src.config import TRADING_PAIRS, TIMEFRAMES, TIMEFRAME_CONFIGS, DATABASE_CONFIG, CACHE_CONFIG
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -49,11 +50,14 @@ class MexcAnalysisBot:
         
         logger.info(f"📈 Торговые пары: {', '.join(self.trading_pairs)}")
         logger.info(f"⏰ Таймфреймы: {', '.join(self.timeframes)}")
-        
-        # Инициализируем компоненты
+          # Инициализируем компоненты
         self.rest_client = MexcRestClient()
         self.volume_detector = VolumeSpikeDetector()
         self.telegram_notifier = TelegramNotifier()
+        
+        # Инициализируем систему сохранения сигналов
+        self.signals_manager = SignalsManager(DATABASE_CONFIG, CACHE_CONFIG)
+        logger.info("💾 Система сохранения сигналов инициализирована")
         
         # Статистика работы для каждой пары и таймфрейма
         self.analysis_stats = {}
@@ -120,10 +124,13 @@ class MexcAnalysisBot:
             # Обновляем статистику
             self.analysis_stats[pair][timeframe]['analyses'] += 1
             self.total_analyses += 1
-            
-            # Шаг 4: Если найден сигнал - отправляем уведомление
+              # Шаг 4: Если найден сигнал - сохраняем и отправляем уведомление
             if signal:
                 logger.info(f"🎯 Обнаружен сигнал для {pair} ({timeframe}): {signal.message}")
+                
+                # Сохраняем сигнал в базу данных через кэш
+                self.signals_manager.save_signal(signal)
+                logger.debug(f"💾 Сигнал для {pair} ({timeframe}) сохранен в БД")
                 
                 # Отправляем через Telegram (пока print)
                 success = self.telegram_notifier.send_volume_signal(signal)
@@ -248,13 +255,101 @@ class MexcAnalysisBot:
                     if stats['analyses'] > 0:
                         logger.debug(f"      ⏰ {timeframe}: {stats['analyses']} анализов, {stats['signals']} сигналов")
     
+    def get_signals_history(self, pair: str = None, timeframe: str = None, 
+                           limit: int = 50) -> List[Dict]:
+        """
+        Получение истории сигналов из базы данных
+        
+        Args:
+            pair (str): Фильтр по торговой паре
+            timeframe (str): Фильтр по таймфрейму
+            limit (int): Максимальное количество записей
+            
+        Returns:
+            List[Dict]: Список сигналов из истории
+        """
+        return self.signals_manager.get_signals_history(pair=pair, timeframe=timeframe, limit=limit)
+    
+    def get_database_statistics(self) -> Dict:
+        """
+        Получение статистики из базы данных
+        
+        Returns:
+            Dict: Статистика БД и кэша
+        """
+        return self.signals_manager.get_full_statistics()
+    
+    def export_signals_history(self, filepath: str, pair: str = None, 
+                              timeframe: str = None, limit: int = 1000) -> bool:
+        """
+        Экспорт истории сигналов в CSV файл
+        
+        Args:
+            filepath (str): Путь к файлу для сохранения
+            pair (str): Фильтр по торговой паре  
+            timeframe (str): Фильтр по таймфрейму
+            limit (int): Максимальное количество записей
+            
+        Returns:
+            bool: True если экспорт успешен
+        """
+        success = self.signals_manager.export_signals(filepath, pair, timeframe, limit)
+        if success:
+            logger.info(f"📁 История сигналов экспортирована в {filepath}")
+        else:
+            logger.error(f"❌ Ошибка экспорта в {filepath}")
+        return success
+    
+    def print_database_statistics(self):
+        """Вывод статистики базы данных и кэша в лог"""
+        try:
+            stats = self.get_database_statistics()
+            
+            logger.info("📊 === СТАТИСТИКА БАЗЫ ДАННЫХ ===")
+            
+            # Статистика БД
+            db_stats = stats.get('database', {})
+            total_signals = db_stats.get('total_signals', 0)
+            logger.info(f"💾 Всего сигналов в БД: {total_signals}")
+            
+            # По парам
+            by_pairs = db_stats.get('by_pairs', {})
+            if by_pairs:
+                logger.info("📈 По торговым парам:")
+                for pair, count in by_pairs.items():
+                    logger.info(f"   {pair}: {count} сигналов")
+            
+            # По таймфреймам
+            by_timeframes = db_stats.get('by_timeframes', {})
+            if by_timeframes:
+                logger.info("⏰ По таймфреймам:")
+                for tf, count in by_timeframes.items():
+                    logger.info(f"   {tf}: {count} сигналов")
+            
+            # Статистика кэша
+            cache_stats = stats.get('cache', {})
+            if cache_stats.get('enabled', False):
+                buffer_size = cache_stats.get('buffer_size', 0)
+                max_buffer = cache_stats.get('max_buffer_size', 0)
+                logger.info(f"🗂️ Кэш: {buffer_size}/{max_buffer} сигналов в буфере")
+            else:            logger.info("🗂️ Кэш отключен")
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения статистики БД: {e}")
+    
     def stop(self):
         """Остановка бота и освобождение ресурсов"""
         logger.info("🛑 Остановка мультипарного бота...")
         
+        # Выводим статистику базы данных
+        self.print_database_statistics()
+        
         # Закрываем соединения
         if hasattr(self.rest_client, 'close'):
             self.rest_client.close()
+        
+        # Закрываем менеджер сигналов (с финальным сбросом кэша)
+        self.signals_manager.close()
         
         # Выводим финальную статистику
         self._print_detailed_statistics()

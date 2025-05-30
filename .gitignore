@@ -15,6 +15,15 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Временные файлы экспорта и логи
+*_20*.csv
+*_export_*.csv
+signals_*.csv
+all_signals_*.csv
+signals_report_*.txt
+bot_*.log
+*.log
+
 # Distribution / packaging
 .Python
 build/

@@ -68,3 +68,23 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 # Настройки логирования
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
+# Настройки базы данных для хранения истории сигналов
+DATABASE_CONFIG = {
+    "type": "sqlite",  # sqlite или postgresql
+    "path": "signals_history.db",  # Путь к SQLite файлу
+    # Для PostgreSQL (если нужно в будущем):
+    # "host": os.getenv("DB_HOST", "localhost"),
+    # "port": os.getenv("DB_PORT", 5432),
+    # "database": os.getenv("DB_NAME", "mexc_signals"),
+    # "user": os.getenv("DB_USER", ""),
+    # "password": os.getenv("DB_PASSWORD", "")
+}
+
+# Настройки write-back кэша для сигналов
+CACHE_CONFIG = {
+    "buffer_size": 100,      # Максимальный размер буфера перед сбросом в БД
+    "flush_interval": 300,   # Интервал принудительного сброса в секундах (5 минут)
+    "batch_size": 50,        # Размер пакета для записи в БД
+    "enable_cache": True     # Включение/выключение кэширования
+}
