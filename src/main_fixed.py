@@ -232,8 +232,9 @@ class AsyncMexcAnalysisBot:
             # Создаем WebSocket клиента с настройками из конфига
             self.ws_client = create_websocket_client(
                 pairs_fetcher=self.pairs_fetcher,
-                event_handler=self._handle_websocket_message,
-                subscription_types=[SubscriptionType(sub) for sub in WEBSOCKET_CONFIG.get('subscription_types', ['ticker', 'kline_Min1'])]
+                message_handler=self._handle_websocket_message,
+                max_connections=WEBSOCKET_CONFIG.get('max_connections', 10),
+                subscription_types=WEBSOCKET_CONFIG.get('subscription_types', ['ticker', 'kline_Min1'])
             )
             
             logger.info("✅ WebSocket клиент инициализирован")

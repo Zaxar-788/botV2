@@ -100,3 +100,26 @@ CACHE_CONFIG = {
     "batch_size": 50,        # Размер пакета для записи в БД
     "enable_cache": True     # Включение/выключение кэширования
 }
+
+# Настройки WebSocket для real-time анализа
+WEBSOCKET_CONFIG = {
+    "enabled": True,                    # Включение/выключение WebSocket анализа
+    "base_url": "wss://contract.mexc.com/ws",
+    "max_connections": 10,              # Максимальное количество одновременных соединений
+    "max_subscriptions_per_connection": 100,  # Лимит MEXC на подписки на соединение
+    "ping_interval": 30,                # Интервал ping в секундах
+    "reconnect_delay": 5,               # Базовая задержка переподключения
+    "max_reconnect_attempts": 10,       # Максимальное количество попыток переподключения
+    "message_timeout": 60,              # Таймаут ожидания сообщений
+    "subscription_types": [             # Типы данных для подписки
+        "ticker",           # Данные тикера
+        "kline_Min1",       # 1-минутные свечи
+        "kline_Min5",       # 5-минутные свечи  
+        "kline_Min15",      # 15-минутные свечи
+        "kline_Min60"       # 1-часовые свечи
+    ],
+    "enable_real_time_analysis": True,  # Включить real-time анализ входящих данных
+    "real_time_volume_threshold": 1.5,  # Порог для real-time анализа спайков объёма
+    "buffer_size": 1000,                # Размер буфера для входящих сообщений
+    "connection_health_check_interval": 60  # Интервал проверки здоровья соединений
+}
